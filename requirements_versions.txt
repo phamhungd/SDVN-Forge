@@ -23,7 +23,7 @@ safetensors==0.4.2
 scikit-image==0.21.0
 spandrel==0.1.6
 tomesd==0.1.3
-torch
+torch==2.1.2
 torchdiffeq==0.2.3
 torchsde==0.2.6
 transformers==4.30.2
