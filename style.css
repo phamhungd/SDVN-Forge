@@ -8,7 +8,6 @@
     --checkbox-label-gap: 0.25em 0.1em;
     --section-header-text-size: 12pt;
     --block-background-fill: transparent;
-
 }
 
 .block.padded:not(.gradio-accordion) {
@@ -427,11 +426,11 @@ div.toprow-compact-tools{
 
 /* settings */
 #quicksettings {
+    --checkbox-label-padding: 6px 6px;
     align-items: end;
 }
 
 #quicksettings > div, #quicksettings > fieldset{
-    max-width: 36em;
     width: fit-content;
     flex: 0 1 fit-content;
     padding: 0;
@@ -439,7 +438,8 @@ div.toprow-compact-tools{
     box-shadow: none;
     background: none;
 }
-#quicksettings > div.gradio-dropdown{
+
+#quicksettings > div.model_selection{
     min-width: 24em !important;
 }
 
@@ -1658,4 +1658,12 @@ body.resizing .resize-handle {
 .extra-network-tree .tree-list-content:hover .button-row {
     visibility: visible;
     width: auto;
+}
+
+.prompt textarea[disabled] {
+    opacity: 0.25 !important;
+}
+
+#quicksettings .gradio-slider span {
+    padding-right: 5px;
 }

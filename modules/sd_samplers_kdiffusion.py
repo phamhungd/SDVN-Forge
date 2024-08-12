@@ -1,13 +1,14 @@
 import torch
 import inspect
 import k_diffusion.sampling
+import k_diffusion.external
 from modules import sd_samplers_common, sd_samplers_extra, sd_samplers_cfg_denoiser, sd_schedulers, devices
 from modules.sd_samplers_cfg_denoiser import CFGDenoiser  # noqa: F401
 from modules.script_callbacks import ExtraNoiseParams, extra_noise_callback
 
 from modules.shared import opts
 import modules.shared as shared
-from modules_forge.forge_sampler import sampling_prepare, sampling_cleanup
+from backend.sampling.sampling_function import sampling_prepare, sampling_cleanup
 
 
 samplers_k_diffusion = [
@@ -55,13 +56,8 @@ class CFGDenoiserKDiffusion(sd_samplers_cfg_denoiser.CFGDenoiser):
     @property
     def inner_model(self):
         if self.model_wrap is None:
-            denoiser_constructor = getattr(shared.sd_model, 'create_denoiser', None)
-
-            if denoiser_constructor is not None:
-                self.model_wrap = denoiser_constructor()
-            else:
-                denoiser = k_diffusion.external.CompVisVDenoiser if shared.sd_model.parameterization == "v" else k_diffusion.external.CompVisDenoiser
-                self.model_wrap = denoiser(shared.sd_model, quantize=shared.opts.enable_quantization)
+            self.model_wrap = k_diffusion.external.ForgeScheduleLinker(shared.sd_model.forge_objects.unet.model.predictor)
+            self.model_wrap.inner_model = shared.sd_model
 
         return self.model_wrap
 
@@ -137,16 +133,14 @@ class KDiffusionSampler(sd_samplers_common.Sampler):
         unet_patcher = self.model_wrap.inner_model.forge_objects.unet
         sampling_prepare(self.model_wrap.inner_model.forge_objects.unet, x=x)
 
-        self.model_wrap.log_sigmas = self.model_wrap.log_sigmas.to(x.device)
-        self.model_wrap.sigmas = self.model_wrap.sigmas.to(x.device)
-
         steps, t_enc = sd_samplers_common.setup_img2img_steps(p, steps)
 
         sigmas = self.get_sigmas(p, steps).to(x.device)
         sigma_sched = sigmas[steps - t_enc - 1:]
 
         x = x.to(noise)
-        xi = x + noise * sigma_sched[0]
+
+        xi = self.model_wrap.predictor.noise_scaling(sigma_sched[0], noise, x, max_denoise=False)
 
         if opts.img2img_extra_noise > 0:
             p.extra_generation_params["Extra noise"] = opts.img2img_extra_noise
@@ -199,18 +193,14 @@ class KDiffusionSampler(sd_samplers_common.Sampler):
         unet_patcher = self.model_wrap.inner_model.forge_objects.unet
         sampling_prepare(self.model_wrap.inner_model.forge_objects.unet, x=x)
 
-        self.model_wrap.log_sigmas = self.model_wrap.log_sigmas.to(x.device)
-        self.model_wrap.sigmas = self.model_wrap.sigmas.to(x.device)
-
         steps = steps or p.steps
 
         sigmas = self.get_sigmas(p, steps).to(x.device)
 
         if opts.sgm_noise_multiplier:
             p.extra_generation_params["SGM noise multiplier"] = True
-            x = x * torch.sqrt(1.0 + sigmas[0] ** 2.0)
-        else:
-            x = x * sigmas[0]
+
+        x = self.model_wrap.predictor.noise_scaling(sigmas[0], x, torch.zeros_like(x), max_denoise=opts.sgm_noise_multiplier)
 
         extra_params_kwargs = self.initialize(p)
         parameters = inspect.signature(self.func).parameters
